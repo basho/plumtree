@@ -99,7 +99,7 @@
 %% distributed Erlang, or over a custom protocol over a TCP socket. See
 %% ``local_compare/2'' and ``do_remote/1'' for examples (-ifdef(TEST) only).
 
--module(hashtree).
+-module(plumtree_hashtree).
 
 -export([new/0,
          new/2,
@@ -554,8 +554,8 @@ sha(Chunk, Bin, Ctx) ->
     end.
 
 get_env(Key, Default) ->
-    CoreEnv = app_helper:get_env(plumtree, Key, Default),
-    app_helper:get_env(riak_kv, Key, CoreEnv).
+    CoreEnv = plumtree_app_helper:get_env(plumtree, Key, Default),
+    plumtree_app_helper:get_env(riak_kv, Key, CoreEnv).
 
 -spec update_levels(integer(),
                     [{integer(), [{integer(), binary()}]}],

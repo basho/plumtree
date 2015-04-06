@@ -114,7 +114,7 @@ start_link() ->
     {ok, LocalState} = plumtree_peer_service_manager:get_local_state(),
     Members = riak_dt_orswot:value(LocalState),
     {InitEagers, InitLazys} = init_peers(Members),
-    Mods = app_helper:get_env(plumtree, broadcast_mods, [plumtree_metadata_manager]),
+    Mods = plumtree_app_helper:get_env(plumtree, broadcast_mods, [plumtree_metadata_manager]),
     Res = start_link(Members, InitEagers, InitLazys, Mods),
     plumtree_peer_service_events:add_sup_callback(fun ?MODULE:update/1),
     Res.
@@ -409,7 +409,7 @@ maybe_exchange(undefined, State) ->
 maybe_exchange(Peer, State=#state{mods=[Mod | _],exchanges=Exchanges}) ->
     %% limit the number of exchanges this node can start concurrently.
     %% the exchange must (currently?) implement any "inbound" concurrency limits
-    ExchangeLimit = app_helper:get_env(plumtree, broadcast_start_exchange_limit, 1),
+    ExchangeLimit = plumtree_app_helper:get_env(plumtree, broadcast_start_exchange_limit, 1),
     BelowLimit = not (length(Exchanges) >= ExchangeLimit),
     FreeMod = lists:keyfind(Mod, 1, Exchanges) =:= false,
     case BelowLimit and FreeMod of
@@ -577,7 +577,7 @@ schedule_exchange_tick() ->
     schedule_tick(exchange_tick, broadcast_exchange_timer, 10000).
 
 schedule_tick(Message, Timer, Default) ->
-    TickMs = app_helper:get_env(plumtree, Timer, Default),
+    TickMs = plumtree_app_helper:get_env(plumtree, Timer, Default),
     erlang:send_after(TickMs, ?MODULE, Message).
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->

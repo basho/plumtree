@@ -56,9 +56,9 @@
 -include("plumtree_metadata.hrl").
 
 -define(SERVER, ?MODULE).
--define(MANIFEST, cluster_meta_manifest).
--define(MANIFEST_FILENAME, "manifest.dets").
--define(ETS, metadata_manager_prefixes_ets).
+-define(MANIFEST, plumtree_cluster_meta_manifest).
+-define(MANIFEST_FILENAME, "plumtree_manifest.dets").
+-define(ETS, plumtree_metadata_manager_prefixes_ets).
 
 -record(state, {
           %% identifier used in logical clocks
@@ -305,7 +305,7 @@ graft(Context, Obj) ->
 %% @doc Trigger an exchange
 -spec exchange(node()) -> {ok, pid()} | {error, term()}.
 exchange(Peer) ->
-    Timeout = app_helper:get_env(plumtree, metadata_exchange_timeout, 60000),
+    Timeout = plumtree_app_helper:get_env(plumtree, metadata_exchange_timeout, 60000),
     case plumtree_metadata_exchange_fsm:start(Peer, Timeout) of
         {ok, Pid} ->
             {ok, Pid};
@@ -680,6 +680,6 @@ data_root(Opts) ->
 
 default_data_root() ->
     case application:get_env(plumtree, plumtree_data_dir) of
-        {ok, PRoot} -> filename:join(PRoot, "cluster_meta");
+        {ok, PRoot} -> filename:join(PRoot, "plumtree_cluster_meta");
         undefined -> undefined
     end.
