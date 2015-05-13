@@ -138,7 +138,8 @@
           snapshot   :: ets:tab(),
 
           %% set of dirty leaves
-          dirty      :: gb_sets:set()
+          %% dirty      :: gb_sets:set() %r17 compatibility
+          dirty      :: gb_set()
          }).
 
 -define(ROOT, '$ht_root').
