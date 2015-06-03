@@ -45,7 +45,7 @@
 
 -record(state, {
           %% the tree managed by this process
-          tree  :: hashtree_tree:tree(),
+          tree  :: plumtree_hashtree_tree:tree(),
 
           %% whether or not the tree has been built or a monitor ref
           %% if the tree is being built
@@ -65,7 +65,7 @@
 %% as the data root.
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    PRoot = app_helper:get_env(plumtree, plumtree_data_dir),
+    PRoot = plumtree_app_helper:get_env(plumtree, plumtree_data_dir),
     DataRoot = filename:join(PRoot, "trees"),
     start_link(DataRoot).
 
@@ -96,14 +96,14 @@ prefix_hash(Prefix) ->
 
 %% @doc Return the bucket for a node in the tree managed by this
 %% process running on `Node'.
--spec get_bucket(node(), hashtree_tree:tree_node(),
+-spec get_bucket(node(), plumtree_hashtree_tree:tree_node(),
                  non_neg_integer(), non_neg_integer()) -> orddict:orddict().
 get_bucket(Node, Prefixes, Level, Bucket) ->
     gen_server:call({?SERVER, Node}, {get_bucket, Prefixes, Level, Bucket}, infinity).
 
 %% @doc Return the key hashes for a node in the tree managed by this
 %% process running on `Node'.
--spec key_hashes(node(), hashtree_tree:tree_node(), non_neg_integer()) -> orddict:orddict().
+-spec key_hashes(node(), plumtree_hashtree_tree:tree_node(), non_neg_integer()) -> orddict:orddict().
 key_hashes(Node, Prefixes, Segment) ->
     gen_server:call({?SERVER, Node}, {key_hashes, Prefixes, Segment}, infinity).
 
@@ -159,7 +159,7 @@ update(Node) ->
 %% value from the previous call.  This function returns the return
 %% value from the last call to `HandlerFun'. {@link hashtree_tree} for
 %% more details on `RemoteFun', `HandlerFun' and `HandlerAcc'.
--spec compare(hashtree_tree:remote_fun(), hashtree_tree:handler_fun(X), X) -> X.
+-spec compare(plumtree_hashtree_tree:remote_fun(), plumtree_hashtree_tree:handler_fun(X), X) -> X.
 compare(RemoteFun, HandlerFun, HandlerAcc) ->
     gen_server:call(?SERVER, {compare, RemoteFun, HandlerFun, HandlerAcc}, infinity).
 
@@ -169,7 +169,7 @@ compare(RemoteFun, HandlerFun, HandlerAcc) ->
 
 init([DataRoot]) ->
     schedule_tick(),
-    Tree = hashtree_tree:new(plumtree, [{data_dir, DataRoot}, {num_levels, 2}]),
+    Tree = plumtree_hashtree_tree:new(plumtree, [{data_dir, DataRoot}, {num_levels, 2}]),
     State = #state{tree=Tree,
                    built=false,
                    lock=undefined},
@@ -186,18 +186,18 @@ handle_call({lock, Pid}, _From, State) ->
     {Reply, State1} = maybe_external_lock(Pid, State),
     {reply, Reply, State1};
 handle_call({get_bucket, Prefixes, Level, Bucket}, _From, State) ->
-    Res = hashtree_tree:get_bucket(Prefixes, Level, Bucket, State#state.tree),
+    Res = plumtree_hashtree_tree:get_bucket(Prefixes, Level, Bucket, State#state.tree),
     {reply, Res, State};
 handle_call({key_hashes, Prefixes, Segment}, _From, State) ->
-    [{_, Res}] = hashtree_tree:key_hashes(Prefixes, Segment, State#state.tree),
+    [{_, Res}] = plumtree_hashtree_tree:key_hashes(Prefixes, Segment, State#state.tree),
     {reply, Res, State};
 handle_call({prefix_hash, Prefix}, _From, State=#state{tree=Tree}) ->
     PrefixList = prefix_to_prefix_list(Prefix),
-    PrefixHash = hashtree_tree:prefix_hash(PrefixList, Tree),
+    PrefixHash = plumtree_hashtree_tree:prefix_hash(PrefixList, Tree),
     {reply, PrefixHash, State};
 handle_call({insert, PKey, Hash, IfMissing}, _From, State=#state{tree=Tree}) ->
     {Prefixes, Key} = prepare_pkey(PKey),
-    Tree1 = hashtree_tree:insert(Prefixes, Key, Hash, [{if_missing, IfMissing}], Tree),
+    Tree1 = plumtree_hashtree_tree:insert(Prefixes, Key, Hash, [{if_missing, IfMissing}], Tree),
     {reply, ok, State#state{tree=Tree1}}.
 
 handle_cast(_Msg, State) ->
@@ -220,7 +220,7 @@ handle_info(tick, State) ->
     {noreply, State2}.
 
 terminate(_Reason, State) ->
-    hashtree_tree:destroy(State#state.tree),
+    plumtree_hashtree_tree:destroy(State#state.tree),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -240,8 +240,8 @@ maybe_compare_async(From, _, _, HandlerAcc, _State) ->
 %% @private
 compare_async(From, RemoteFun, HandlerFun, HandlerAcc, #state{tree=Tree}) ->
     spawn_link(fun() ->
-                       Res = hashtree_tree:compare(Tree, RemoteFun,
-                                                   HandlerFun, HandlerAcc),
+                       Res = plumtree_hashtree_tree:compare(Tree, RemoteFun,
+							    HandlerFun, HandlerAcc),
                        gen_server:reply(From, Res)
                end).
 
@@ -270,9 +270,9 @@ update_async(State) ->
 
 %% @private
 update_async(From, Lock, State=#state{tree=Tree}) ->
-    Tree2 = hashtree_tree:update_snapshot(Tree),
+    Tree2 = plumtree_hashtree_tree:update_snapshot(Tree),
     Pid = spawn_link(fun() ->
-                             hashtree_tree:update_perform(Tree2),
+                             plumtree_hashtree_tree:update_perform(Tree2),
                              case From of
                                  undefined -> ok;
                                  _ -> gen_server:reply(From, ok)
@@ -363,5 +363,5 @@ prepare_pkey({FullPrefix, Key}) ->
 
 %% @private
 schedule_tick() ->
-    TickMs = app_helper:get_env(plumtree, metadata_hashtree_timer, 10000),
+    TickMs = plumtree_app_helper:get_env(plumtree, metadata_hashtree_timer, 10000),
     erlang:send_after(TickMs, ?MODULE, tick).

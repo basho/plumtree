@@ -22,7 +22,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0]).
+-export([start_link/0, start_link/1]).
 
 -export([init/1]).
 
@@ -30,17 +30,23 @@
 -define(CHILD(I, Type), ?CHILD(I, Type, 5000)).
 
 start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+    start_link(plumtree_default_peer_service).
 
-init([]) ->
+start_link(PeerService)->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [PeerService]).
+
+init([PeerService]) ->
+    _State = plumtree_peer_service_manager:init(),
+    Broadcast = {plumtree_broadcast,
+		 {plumtree_broadcast, start_link,[PeerService]}, 
+		 permanent, 5000, worker, [plumtree_broadcast]}, 
     Children = lists:flatten(
                  [
                  ?CHILD(plumtree_peer_service_gossip, worker),
                  ?CHILD(plumtree_peer_service_events, worker),
-                 ?CHILD(plumtree_broadcast, worker),
+                 Broadcast,
                  ?CHILD(plumtree_metadata_manager, worker),
                  ?CHILD(plumtree_metadata_hashtree, worker)
                  ]),
     RestartStrategy = {one_for_one, 10, 10},
     {ok, {RestartStrategy, Children}}.
-

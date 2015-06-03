@@ -23,7 +23,8 @@
 
 %% API
 -export([start_link/0,
-         start_link/4,
+         start_link/1,
+	 start_link/5,
          broadcast/2,
          update/1,
          broadcast_members/0,
@@ -92,6 +93,9 @@
           %% List of outstanding exchanges
           exchanges     :: exchanges(),
 
+	  %% Peer service behavior implementation
+	  peer_service :: module(),
+
           %% Set of all known members. Used to determine
           %% which members have joined and left during a membership update
           all_members   :: ordsets:ordset(nodename())
@@ -101,6 +105,11 @@
 %%% API
 %%%===================================================================
 
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+start_link()->
+    start_link(plumtree_default_peer_service).
+
+
 %% @doc Starts the broadcast server on this node. The initial membership list is
 %% fetched from the ring. If the node is a singleton then the initial eager and lazy
 %% sets are empty. If there are two nodes, each will be in the others eager set and the
@@ -109,14 +118,18 @@
 %% each node will have at most two other nodes in its eager set and one in its lazy set, initally.
 %% In addition, after the broadcast server is started, a callback is registered with ring_events
 %% to generate membership updates as the ring changes.
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    {ok, LocalState} = plumtree_peer_service_manager:get_local_state(),
-    Members = riak_dt_orswot:value(LocalState),
+-spec start_link(module()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(PeerService) ->
+    %%{ok, LocalState} = PeerService:get_peer_state(),
+    LocalState = PeerService:get_peer_state(),
+    %%{ok, LocalState} = plumtree_peer_service_manager:get_local_state(),
+    %% Members = riak_dt_orswot:value(LocalState),
+    Members = PeerService:get_members(LocalState),
     {InitEagers, InitLazys} = init_peers(Members),
-    Mods = app_helper:get_env(plumtree, broadcast_mods, [plumtree_metadata_manager]),
-    Res = start_link(Members, InitEagers, InitLazys, Mods),
-    plumtree_peer_service_events:add_sup_callback(fun ?MODULE:update/1),
+    Mods = plumtree_app_helper:get_env(plumtree, broadcast_mods, [plumtree_metadata_manager]),
+    Res = start_link(Members, InitEagers, InitLazys, Mods, PeerService),
+    PeerService:register_changes(fun ?MODULE:update/1),
+    %%plumtree_peer_service_events:add_sup_callback(fun ?MODULE:update/1),
     Res.
 
 %% @doc Starts the broadcast server on this node. `InitMembers' must be a list
@@ -129,13 +142,13 @@ start_link() ->
 %% a list of modules that may be handlers for broadcasted messages. All modules in
 %% `Mods' should implement the `plumtree_broadcast_handler' behaviour.
 %%
-%% NOTE: When starting the server using start_link/2 no automatic membership update from
+%% NOTE: When starting the server using start_link/4 no automatic membership update from
 %% ring_events is registered. Use start_link/0.
--spec start_link([nodename()], [nodename()], [nodename()], [module()]) ->
+-spec start_link([nodename()], [nodename()], [nodename()], [module()], module()) ->
                         {ok, pid()} | ignore | {error, term}.
-start_link(InitMembers, InitEagers, InitLazys, Mods) ->
+start_link(InitMembers, InitEagers, InitLazys, Mods, PeerService) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE,
-                          [InitMembers, InitEagers, InitLazys, Mods], []).
+                          [InitMembers, InitEagers, InitLazys, Mods, PeerService], []).
 
 %% @doc Broadcasts a message originating from this node. The message will be delivered to
 %% each node at least once. The `Mod' passed is responsible for handling the message on remote
@@ -216,15 +229,12 @@ debug_get_tree(Root, Nodes) ->
 %%%===================================================================
 
 %% @private
--spec init([[nodename()]]) -> {ok, #state{}} |
-                                  {ok, #state{}, non_neg_integer() | infinity} |
-                                  ignore |
-                                  {stop, term()}.
-init([AllMembers, InitEagers, InitLazys, Mods]) ->
+init([AllMembers, InitEagers, InitLazys, Mods, PeerService]) ->
     schedule_lazy_tick(),
     schedule_exchange_tick(),
     State1 =  #state{
-                 outstanding   = orddict:new(),
+		 peer_service = PeerService,
+                 outstanding = orddict:new(),
                  mods = lists:usort(Mods),
                  exchanges=[]
                 },
@@ -277,8 +287,10 @@ handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
     Result = Mod:graft(MessageId),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
-handle_cast({update, LocalState}, State=#state{all_members=BroadcastMembers}) ->
-    Members = riak_dt_orswot:value(LocalState),
+handle_cast({update, LocalState}, State=#state{all_members=BroadcastMembers,
+					       peer_service=PeerService}) ->
+    %% Members = riak_dt_orswot:value(LocalState),
+    Members = PeerService:get_members(LocalState),
     CurrentMembers = ordsets:from_list(Members),
     New = ordsets:subtract(CurrentMembers, BroadcastMembers),
     Removed = ordsets:subtract(BroadcastMembers, CurrentMembers),
@@ -409,7 +421,7 @@ maybe_exchange(undefined, State) ->
 maybe_exchange(Peer, State=#state{mods=[Mod | _],exchanges=Exchanges}) ->
     %% limit the number of exchanges this node can start concurrently.
     %% the exchange must (currently?) implement any "inbound" concurrency limits
-    ExchangeLimit = app_helper:get_env(plumtree, broadcast_start_exchange_limit, 1),
+    ExchangeLimit = plumtree_app_helper:get_env(plumtree, broadcast_start_exchange_limit, 1),
     BelowLimit = not (length(Exchanges) >= ExchangeLimit),
     FreeMod = lists:keyfind(Mod, 1, Exchanges) =:= false,
     case BelowLimit and FreeMod of
@@ -577,7 +589,7 @@ schedule_exchange_tick() ->
     schedule_tick(exchange_tick, broadcast_exchange_timer, 10000).
 
 schedule_tick(Message, Timer, Default) ->
-    TickMs = app_helper:get_env(plumtree, Timer, Default),
+    TickMs = plumtree_app_helper:get_env(plumtree, Timer, Default),
     erlang:send_after(TickMs, ?MODULE, Message).
 
 reset_peers(AllMembers, EagerPeers, LazyPeers, State) ->

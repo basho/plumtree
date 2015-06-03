@@ -20,7 +20,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(app_helper).
+-module(plumtree_app_helper).
 
 -export([get_env/1,
          get_env/2,

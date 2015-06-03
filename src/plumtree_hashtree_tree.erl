@@ -102,7 +102,7 @@
 %% {@link hashtree}, are stored in {@link ets}.
 
 
--module(hashtree_tree).
+-module(plumtree_hashtree_tree).
 
 -export([new/2,
          destroy/1,
@@ -138,7 +138,8 @@
           snapshot   :: ets:tab(),
 
           %% set of dirty leaves
-          dirty      :: gb_sets:set()
+          %% dirty      :: gb_sets:set() %r17 compatibility
+          dirty      :: gb_set()
          }).
 
 -define(ROOT, '$ht_root').
@@ -192,8 +193,8 @@ new(TreeId, Opts) ->
 -spec destroy(tree()) -> ok.
 destroy(Tree) ->
     ets:foldl(fun({_, Node}, _) ->
-                      Node1 = hashtree:close(Node),
-                      hashtree:destroy(Node1)
+                      Node1 = plumtree_hashtree:close(Node),
+                      plumtree_hashtree:destroy(Node1)
               end, undefined, Tree#hashtree_tree.nodes),
     catch ets:delete(Tree#hashtree_tree.nodes),
     ok.
@@ -238,7 +239,7 @@ update_snapshot(Tree=#hashtree_tree{dirty=Dirty,nodes=Nodes,snapshot=Snapshot0})
     FoldRes = gb_sets:fold(fun(DirtyName, Acc) ->
                                    DirtyKey = node_key(DirtyName, Tree),
                                    Node = lookup_node(DirtyName, Tree),
-                                   {DirtyNode, NewNode} = hashtree:update_snapshot(Node),
+                                   {DirtyNode, NewNode} = plumtree_hashtree:update_snapshot(Node),
                                    [{{DirtyKey, DirtyNode}, {DirtyKey, NewNode}} | Acc]
                            end, [], Dirty),
     {Snaps, NewNodes} = lists:unzip(FoldRes),
@@ -266,9 +267,9 @@ update_perform(Tree=#hashtree_tree{snapshot=Snapshot}) ->
 -spec local_compare(tree(), tree()) -> [diff()].
 local_compare(T1, T2) ->
     RemoteFun = fun(Prefixes, {get_bucket, {Level, Bucket}}) ->
-                        hashtree_tree:get_bucket(Prefixes, Level, Bucket, T2);
+                        ?MODULE:get_bucket(Prefixes, Level, Bucket, T2);
                    (Prefixes, {key_hashes, Segment}) ->
-                        [{_, Hashes}] = hashtree_tree:key_hashes(Prefixes, Segment, T2),
+                        [{_, Hashes}] = ?MODULE:key_hashes(Prefixes, Segment, T2),
                         Hashes
                 end,
     HandlerFun = fun(Diff, Acc) -> Acc ++ [Diff] end,
@@ -304,7 +305,7 @@ prefix_hash(Prefixes, Tree) ->
     NodeName = prefixes_to_node_name(Prefixes),
     case lookup_node(NodeName, Tree) of
         undefined -> undefined;
-        Node -> extract_top_hash(hashtree:top_hash(Node))
+        Node -> extract_top_hash(plumtree_hashtree:top_hash(Node))
     end.
 
 %% @doc Returns the {@link hashtree} buckets for a given node in the
@@ -314,7 +315,7 @@ prefix_hash(Prefixes, Tree) ->
 get_bucket(Prefixes, Level, Bucket, Tree) ->
     case lookup_node(prefixes_to_node_name(Prefixes), Tree) of
         undefined -> orddict:new();
-        Node -> hashtree:get_bucket(Level, Bucket, Node)
+        Node -> plumtree_hashtree:get_bucket(Level, Bucket, Node)
     end.
 
 %% @doc Returns the {@link hashtree} segment hashes for a given node
@@ -324,7 +325,7 @@ get_bucket(Prefixes, Level, Bucket, Tree) ->
 key_hashes(Prefixes, Segment, Tree) ->
     case lookup_node(prefixes_to_node_name(Prefixes), Tree) of
         undefined -> [{Segment, orddict:new()}];
-        Node -> hashtree:key_hashes(Node, Segment)
+        Node -> plumtree_hashtree:key_hashes(Node, Segment)
     end.
 
 %%%===================================================================
@@ -338,7 +339,7 @@ insert_hash(Key, Hash, Opts, NodeName, Tree) ->
 
 %% @private
 insert_hash(Key, Hash, Opts, NodeName, Node, Tree=#hashtree_tree{dirty=Dirty}) ->
-    Node2 = hashtree:insert(Key, Hash, Node, Opts),
+    Node2 = plumtree_hashtree:insert(Key, Hash, Node, Opts),
     Dirty2 = gb_sets:add_element(NodeName, Dirty),
     _ = set_node(NodeName, Node2, Tree),
     Tree#hashtree_tree{dirty=Dirty2}.
@@ -355,7 +356,7 @@ update_dirty_parents(DirtyParents, Tree) ->
             NextDirty = gb_sets:fold(
                           fun(DirtyParent, DirtyAcc) ->
                                   DirtyNode = lookup_node(DirtyParent, Tree),
-                                  {DirtySnap, DirtyNode2} = hashtree:update_snapshot(DirtyNode),
+                                  {DirtySnap, DirtyNode2} = plumtree_hashtree:update_snapshot(DirtyNode),
                                   NextDirty = update_dirty(DirtyParent, DirtySnap, DirtyAcc, Tree),
                                   _ = set_node(DirtyParent, DirtyNode2, Tree),
                                   NextDirty
@@ -366,12 +367,12 @@ update_dirty_parents(DirtyParents, Tree) ->
 %% @private
 update_dirty(DirtyName, DirtyNode, NextDirty, Tree) ->
     %% ignore returned tree b/c we are tracking dirty nodes in this fold seperately
-    _ = hashtree:update_perform(DirtyNode),
+    _ = plumtree_hashtree:update_perform(DirtyNode),
     case parent_node(DirtyName, Tree) of
         undefined ->
             NextDirty;
         {ParentName, ParentNode} ->
-            TopHash = extract_top_hash(hashtree:top_hash(DirtyNode)),
+            TopHash = extract_top_hash(plumtree_hashtree:top_hash(DirtyNode)),
             ParentKey = to_parent_key(DirtyName),
             %% ignore returned tree b/c we are tracking dirty nodes in this fold seperately
             _ = insert_hash(ParentKey, TopHash, [], ParentName, ParentNode, Tree),
@@ -391,7 +392,7 @@ compare(NodeName, Level, LocalTree, RemoteFun, HandlerFun, HandlerAcc)
                                       extract_compare_acc(CompareAcc, HandlerAcc)),
                      [{acc, Res}]
              end,
-    CompareRes = hashtree:compare(LocalNode, RemoteNode, AccFun, []),
+    CompareRes = plumtree_hashtree:compare(LocalNode, RemoteNode, AccFun, []),
     extract_compare_acc(CompareRes, HandlerAcc);
 compare(NodeName, Level, LocalTree, RemoteFun, HandlerFun, HandlerAcc) ->
     Prefixes = node_name_to_prefixes(NodeName),
@@ -412,7 +413,7 @@ compare(NodeName, Level, LocalTree, RemoteFun, HandlerFun, HandlerAcc) ->
                                        extract_compare_acc(CompareAcc, HandlerAcc), Diffs),
                      [{acc, Res}]
              end,
-    CompareRes = hashtree:compare(LocalNode, RemoteNode, AccFun, []),
+    CompareRes = plumtree_hashtree:compare(LocalNode, RemoteNode, AccFun, []),
     extract_compare_acc(CompareRes, HandlerAcc).
 
 
@@ -454,8 +455,8 @@ create_node(?ROOT, Tree) ->
     Opts = [{segment_path, NodePath}, {segments, NumSegs}, {width, Width}],
     %% destroy any data that previously existed because its lingering from
     %% a tree that was not properly destroyed
-    ok = hashtree:destroy(NodePath),
-    Node = hashtree:new(NodeId, Opts),
+    ok = plumtree_hashtree:destroy(NodePath),
+    Node = plumtree_hashtree:new(NodeId, Opts),
     set_node(?ROOT, Node, Tree);
 create_node([], Tree) ->
     create_node(?ROOT, Tree);
@@ -466,7 +467,7 @@ create_node(NodeName, Tree) ->
     Width = node_width(NodeName),
     Opts = [{segments, NumSegs}, {width, Width}],
     %% share segment store accross all nodes
-    Node = hashtree:new(NodeId, RootNode, Opts),
+    Node = plumtree_hashtree:new(NodeId, RootNode, Opts),
     set_node(NodeName, Node, Tree).
 
 %% @private

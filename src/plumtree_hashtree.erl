@@ -99,7 +99,7 @@
 %% distributed Erlang, or over a custom protocol over a TCP socket. See
 %% ``local_compare/2'' and ``do_remote/1'' for examples (-ifdef(TEST) only).
 
--module(hashtree).
+-module(plumtree_hashtree).
 
 -export([new/0,
          new/2,
@@ -174,13 +174,15 @@
                 segments       :: pos_integer(),
                 width          :: pos_integer(),
                 mem_levels     :: integer(),
-                tree           :: dict:dict(),
+                %%tree           :: dict:dict(), %r17 compatibility
+                tree           :: dict(),
                 ref            :: term(),
                 path           :: string(),
                 itr            :: term(),
                 write_buffer   :: [{put, binary(), binary()} | {delete, binary()}],
                 write_buffer_count :: integer(),
-                dirty_segments :: array:array()
+                %%dirty_segments :: array:array() %r17 compatibility
+                dirty_segments :: array()
                }).
 
 -record(itr_state, {itr                :: term(),
@@ -554,8 +556,8 @@ sha(Chunk, Bin, Ctx) ->
     end.
 
 get_env(Key, Default) ->
-    CoreEnv = app_helper:get_env(plumtree, Key, Default),
-    app_helper:get_env(riak_kv, Key, CoreEnv).
+    CoreEnv = plumtree_app_helper:get_env(plumtree, Key, Default),
+    plumtree_app_helper:get_env(riak_kv, Key, CoreEnv).
 
 -spec update_levels(integer(),
                     [{integer(), [{integer(), binary()}]}],
@@ -872,17 +874,20 @@ orddict_delta(D1, [], Acc) ->
 %%%===================================================================
 -define(W, 27).
 
--spec bitarray_new(integer()) -> array:array().
+%%-spec bitarray_new(integer()) -> array:array(). %r17 compatibility
+-spec bitarray_new(integer()) -> array().
 bitarray_new(N) -> array:new((N-1) div ?W + 1, {default, 0}).
 
--spec bitarray_set(integer(), array:array()) -> array:array().
+%%-spec bitarray_set(integer(), array:array()) -> array:array(). %r17 compatibility
+-spec bitarray_set(integer(), array()) -> array().
 bitarray_set(I, A) ->
     AI = I div ?W,
     V = array:get(AI, A),
     V1 = V bor (1 bsl (I rem ?W)),
     array:set(AI, V1, A).
 
--spec bitarray_to_list(array:array()) -> [integer()].
+%%-spec bitarray_to_list(array:array()) -> [integer()]. %r17 compatibility
+-spec bitarray_to_list(array()) -> [integer()].
 bitarray_to_list(A) ->
     lists:reverse(
       array:sparse_foldl(fun(I, V, Acc) ->

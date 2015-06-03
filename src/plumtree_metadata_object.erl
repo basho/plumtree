@@ -43,17 +43,17 @@ value(Metadata) ->
 %% @doc returns a list of values held in the object
 -spec values(metadata_object()) -> [metadata_value()].
 values({metadata, Object}) ->
-    [Value || {Value, _Ts} <- dvvset:values(Object)].
+    [Value || {Value, _Ts} <- plumtree_dvvset:values(Object)].
 
 %% @doc returns the number of siblings in the given object
 -spec value_count(metadata_object()) -> non_neg_integer().
 value_count({metadata, Object}) ->
-    dvvset:size(Object).
+    plumtree_dvvset:size(Object).
 
 %% @doc returns the context (opaque causal history) for the given object
 -spec context(metadata_object()) -> metadata_context().
 context({metadata, Object}) ->
-    dvvset:join(Object).
+    plumtree_dvvset:join(Object).
 
 %% @doc returns the representation for an empty context (opaque causal history)
 -spec empty_context() -> metadata_context().
@@ -80,11 +80,11 @@ modify(Obj, Context, Fun, ServerId) when is_function(Fun) ->
 modify(undefined, _Context, Value, ServerId) ->
     %% Ignore the context since we dont have a value, its invalid if not
     %% empty anyways, so give it a valid one
-    NewRecord = dvvset:new(timestamped_value(Value)),
-    {metadata, dvvset:update(NewRecord, ServerId)};
+    NewRecord = plumtree_dvvset:new(timestamped_value(Value)),
+    {metadata, plumtree_dvvset:update(NewRecord, ServerId)};
 modify({metadata, Existing}, Context, Value, ServerId) ->
-    InsertRec = dvvset:new(Context, timestamped_value(Value)),
-    {metadata, dvvset:update(InsertRec, Existing, ServerId)}.
+    InsertRec = plumtree_dvvset:new(Context, timestamped_value(Value)),
+    {metadata, plumtree_dvvset:update(InsertRec, Existing, ServerId)}.
 
 %% @doc Reconciles a remote object received during replication or anti-entropy
 %% with a local object. If the remote object is an anscestor of or is equal to the local one
@@ -97,12 +97,12 @@ reconcile(undefined, _LocalObj) ->
 reconcile(RemoteObj, undefined) ->
     {true, RemoteObj};
 reconcile({metadata, RemoteObj}, {metadata, LocalObj}) ->
-    Less  = dvvset:less(RemoteObj, LocalObj),
-    Equal = dvvset:equal(RemoteObj, LocalObj),
+    Less  = plumtree_dvvset:less(RemoteObj, LocalObj),
+    Equal = plumtree_dvvset:equal(RemoteObj, LocalObj),
     case not (Equal or Less) of
         false -> false;
         true ->
-            {true, {metadata, dvvset:sync([LocalObj, RemoteObj])}}
+            {true, {metadata, plumtree_dvvset:sync([LocalObj, RemoteObj])}}
     end.
 
 %% @doc Resolves siblings using either last-write-wins or the provided function and returns
@@ -111,11 +111,11 @@ reconcile({metadata, RemoteObj}, {metadata, LocalObj}) ->
                      metadata_object().
 resolve({metadata, Object}, lww) ->
     LWW = fun ({_,TS1}, {_,TS2}) -> TS1 =< TS2 end,
-    {metadata, dvvset:lww(LWW, Object)};
+    {metadata, plumtree_dvvset:lww(LWW, Object)};
 resolve({metadata, Existing}, Reconcile) when is_function(Reconcile) ->
     ResolveFun = fun({A, _}, {B, _}) -> timestamped_value(Reconcile(A, B)) end,
     F = fun([Value | Rest]) -> lists:foldl(ResolveFun, Value, Rest) end,
-    {metadata, dvvset:reconcile(F, Existing)}.
+    {metadata, plumtree_dvvset:reconcile(F, Existing)}.
 
 %% @doc Determines if the given context (version vector) is causually newer than
 %% an existing object. If the object missing or if the context does not represent
@@ -126,7 +126,7 @@ resolve({metadata, Existing}, Reconcile) when is_function(Reconcile) ->
 is_stale(_, undefined) ->
     false;
 is_stale(RemoteContext, {metadata, Obj}) ->
-    LocalContext = dvvset:join(Obj),
+    LocalContext = plumtree_dvvset:join(Obj),
     %% returns true (stale) when local context is causally newer or equal to remote context
     descends(LocalContext, RemoteContext).
 
@@ -143,7 +143,7 @@ descends(Ca, Cb) ->
 %% @doc Returns true if the given context and the context of the existing object are equal
 -spec equal_context(metadata_context(), metadata_object()) -> boolean().
 equal_context(Context, {metadata, Obj}) ->
-    Context =:= dvvset:join(Obj).
+    Context =:= plumtree_dvvset:join(Obj).
 
 timestamped_value(Value) ->
     {Value, os:timestamp()}.

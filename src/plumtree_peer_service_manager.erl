@@ -20,7 +20,7 @@
 
 -module(plumtree_peer_service_manager).
 
--define(TBL, cluster_state).
+-define(TBL, plumtree_cluster_state).
 
 -export([init/0, get_local_state/0, get_actor/0, update_state/1, delete_state/0]).
 
