@@ -1,5 +1,5 @@
 -module(plumtree_default_peer_service).
--behavior(plumtree_peer_behavior).
+-behavior(plumtree_peer_behaviour).
 
 -export([get_peer_state/0,
 	 register_changes/1,

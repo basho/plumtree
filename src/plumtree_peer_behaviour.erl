@@ -1,4 +1,4 @@
--module(plumtree_peer_behavior).
+-module(plumtree_peer_behaviour).
 
 
 -type peer_state() :: any().
